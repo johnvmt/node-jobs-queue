@@ -1,7 +1,7 @@
 {
   "name": "jobs-queue",
-  "version": "0.0.1",
-  "description": "Module loader for Kaleidoscope framework",
+  "version": "0.0.2",
+  "description": "Queue of tasks, with optional simultaneous jobs set at a module and/or job level",
   "private": false,
   "author": {
     "name": "John Murphy-Teixidor",
