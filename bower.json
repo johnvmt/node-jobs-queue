@@ -1,6 +1,6 @@
 {
   "name": "jobs-queue",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Queue of tasks, with optional simultaneous jobs set at a module and/or job level",
   "authors": [
     "John Murphy-Teixidor <johnvmt@gmail.com>"

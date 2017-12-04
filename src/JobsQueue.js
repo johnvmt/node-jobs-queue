@@ -36,7 +36,8 @@ JobsQueue.prototype._tryStartNextJob = function() {
 			this.inprogressJobList.enqueue(job.jobId, job); // Add to the jobs in progress list, with same ID
 			this.inprogress++;
 
-			job.start(job.controller.complete); // Start the job and pass in the callback to finish the job
+			this._startJob(job.jobId);
+
 			this._tryStartNextJob(); // May be able to run jobs simultaneously
 		}
 	}
@@ -50,6 +51,18 @@ JobsQueue.prototype._tryStartNextJob = function() {
 
 	function maxFromOption(maxInProgress) {
 		return (typeof maxInProgress == 'number' && maxInProgress > 0) ? maxInProgress : 0;
+	}
+};
+
+JobsQueue.prototype._startJob = function(jobId) {
+	if(this.inprogressJobList.hasIndex(jobId)) {
+		var job = this.inprogressJobList.get(jobId);
+		var jobRestarts = job.restarts;
+
+		job.start(function() { // Start the job and pass in the callback to finish the job
+			if(jobRestarts == job.restarts) // Check if job started was the last one
+				job.controller.complete();
+		});
 	}
 };
 
@@ -71,21 +84,32 @@ JobsQueue.prototype._finishJob = function(jobId) {
 JobsQueue.prototype.enqueue = function(callback, options) {
 	var self = this;
 	var jobId = this._uniqueId();
+
+	var job = {
+		jobId: jobId,
+		start: callback, // Wrap function to ensure uniqueness when job finishes
+		restarts: 0,
+		options: self._objectMerge({}, options),
+	}
+
 	var jobController = {
 		cancel: function() {
 			self._finishJob(jobId);
 		},
 		complete: function() {
 			self._finishJob(jobId);
+		},
+		restart: function(newCallback) {
+			if(typeof newCallback == 'function')
+				job.start = newCallback;
+			job.restarts++;
+			self._startJob(jobId); // Restart if already in progress
 		}
 	};
 
-	self.queuedJobList.enqueue(jobId, {
-		jobId: jobId,
-		start: callback,
-		options: self._objectMerge({}, options),
-		controller: jobController
-	});
+	job.controller = jobController;
+
+	self.queuedJobList.enqueue(jobId, job);
 
 	this.queued++;
 

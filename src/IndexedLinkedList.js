@@ -16,6 +16,16 @@ IndexedLinkedList.prototype.peek = function () {
 };
 
 /**
+ * Get item with given index, if it exists
+ */
+IndexedLinkedList.prototype.get = function(index) {
+	if(!this.hasIndex(index))
+		throw new Error('index_undefined');
+	else
+		return this.list[index].data;
+};
+
+/**
  * Check if item with given index exists
  */
 IndexedLinkedList.prototype.hasIndex = function(index) {
