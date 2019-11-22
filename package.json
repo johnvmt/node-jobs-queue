@@ -1,6 +1,6 @@
 {
   "name": "jobs-queue",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Queue of tasks, with optional simultaneous jobs set at a module and/or job level",
   "private": false,
   "author": {
@@ -12,14 +12,14 @@
     "url": "https://github.com/johnvmt/node-jobs-queue.git"
   },
   "devDependencies": {
-    "browserify": "11.2.x",
+    "browserify": "^16.5.0",
     "minifyify": "7.3.x"
   },
-  "dependencies": {
-  },
+  "dependencies": {},
   "main": "./src/JobsQueue.js",
+  "license": "MIT",
   "scripts": {
     "test": "mocha test",
-    "prepublish": "node ./scripts/browserify.js"
+    "prepare": "node ./scripts/browserify.js"
   }
 }

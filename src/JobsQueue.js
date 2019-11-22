@@ -1,21 +1,20 @@
-var IndexedLinkedList = require('./IndexedLinkedList');
 
 function JobsQueue(passedOptions) {
 	var defaultOptions = {
 		maxSimultaneous: 1
 	};
 
-	this.options = this._objectMerge(defaultOptions, passedOptions)
+	this.options = Object.assign(defaultOptions, passedOptions)
 
-	this.queuedJobList = IndexedLinkedList();
-	this.inprogressJobList = IndexedLinkedList();
+	this.queuedJobList = []; // IndexedLinkedList();
+	this.inprogressJobList = []; // IndexedLinkedList();
 
 	this.inprogress = 0;
 	this.queued = 0;
 }
 
 JobsQueue.prototype._tryStartNextJob = function() {
-	if(this.queuedJobList.length) {
+	if(this.queuedJobList.length > 0) {
 		// Get max simultaneous jobs from jobs in progress, next job in queue, global max; take min of these to get max
 		var globalMaxSimultaneous = maxFromOption(this.options.maxSimultaneous);
 
@@ -24,16 +23,16 @@ JobsQueue.prototype._tryStartNextJob = function() {
 			inprogressMaxSimultaneous = maxFromArray([inprogressMaxSimultaneous, job.options.maxSimultaneous]);
 		});
 
-		var nextJob = this.queuedJobList.peek();
+		var nextJob = this.queuedJobList[0]; // peek
 		var nextJobMaxSimultaneous = maxFromOption(nextJob.options.maxSimultaneous);
 
 		var maxSimultaneous = maxFromArray([globalMaxSimultaneous, inprogressMaxSimultaneous, nextJobMaxSimultaneous]);
 
 		if(maxSimultaneous <= 0 || this.inprogress < maxSimultaneous) { // Start the next job
-			var job = this.queuedJobList.dequeue(); // Remove from the queued jobs list
+			var job = this.queuedJobList.shift(); // Remove from the queued jobs list
 			this.queued--;
 
-			this.inprogressJobList.enqueue(job.jobId, job); // Add to the jobs in progress list, with same ID
+			this.inprogressJobList.push(job); // Add to the jobs in progress list, with same ID
 			this.inprogress++;
 
 			this._startJob(job.jobId);
@@ -55,8 +54,8 @@ JobsQueue.prototype._tryStartNextJob = function() {
 };
 
 JobsQueue.prototype._startJob = function(jobId) {
-	if(this.inprogressJobList.hasIndex(jobId)) {
-		var job = this.inprogressJobList.get(jobId);
+	let job = this.inprogressJobList.find(j => j.jobId = jobId)
+	if (job) {
 		var jobRestarts = job.restarts;
 
 		job.start(function() { // Start the job and pass in the callback to finish the job
@@ -67,18 +66,21 @@ JobsQueue.prototype._startJob = function(jobId) {
 };
 
 JobsQueue.prototype._finishJob = function(jobId) {
-	if(this.inprogressJobList.hasIndex(jobId)) {
-		this.inprogressJobList.remove(jobId);
+	let jobIndexP = this.inprogressJobList.findIndex(j => j.jobIndex === jobId)
+	if (jobIndexP >= 0) {
+		this.inprogressJobList.splice(jobIndexP, 1);
 		this.inprogress--;
 		this._tryStartNextJob();
+		return;
 	}
-	else if(this.queuedJobList.hasIndex(jobId)) {
-		this.queuedJobList.remove(jobId);
+	let jobIndexQ = this.queuedJobList.findIndex(j => j.jobId === jobId)
+	if (jobIndexQ >= 0) {
+		this.queuedJobList.splice(jobIndexQ, 1);
 		this.queued--;
 		this._tryStartNextJob();
+		return;
 	}
-	else
-		throw new Error('job_not_found');
+	throw new Error('job_not_found');
 };
 
 JobsQueue.prototype.enqueue = function(callback, options) {
@@ -89,7 +91,7 @@ JobsQueue.prototype.enqueue = function(callback, options) {
 		jobId: jobId,
 		start: callback, // Wrap function to ensure uniqueness when job finishes
 		restarts: 0,
-		options: self._objectMerge({}, options),
+		options: Object.assign({}, options),
 	}
 
 	var jobController = {
@@ -109,7 +111,7 @@ JobsQueue.prototype.enqueue = function(callback, options) {
 
 	job.controller = jobController;
 
-	self.queuedJobList.enqueue(jobId, job);
+	self.queuedJobList.push(job);
 
 	this.queued++;
 
@@ -125,17 +127,6 @@ JobsQueue.prototype._objectForEach = function(object, callback) {
 		if (object.hasOwnProperty(property))
 			callback(object[property], property, object);
 	}
-};
-
-JobsQueue.prototype._objectMerge = function() {
-	var merged = {};
-	this._objectForEach(arguments, function(argument) {
-		for (var attrname in argument) {
-			if(argument.hasOwnProperty(attrname))
-				merged[attrname] = argument[attrname];
-		}
-	});
-	return merged;
 };
 
 JobsQueue.prototype._uniqueId = function() {
