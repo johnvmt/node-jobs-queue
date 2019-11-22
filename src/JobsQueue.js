@@ -66,7 +66,7 @@ JobsQueue.prototype._startJob = function(jobId) {
 };
 
 JobsQueue.prototype._finishJob = function(jobId) {
-	let jobIndexP = this.inprogressJobList.findIndex(j => j.jobIndex === jobId)
+	let jobIndexP = this.inprogressJobList.findIndex(j => j.jobId === jobId)
 	if (jobIndexP >= 0) {
 		this.inprogressJobList.splice(jobIndexP, 1);
 		this.inprogress--;
