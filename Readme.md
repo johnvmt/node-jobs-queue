@@ -72,7 +72,7 @@ Queue of tasks, with options to cancel and retry
 
 ## Example ##
 
-    import JobsQueue from "./src/JobsQueue";
+    import JobsQueue from "jobs-queue";
     
     const jobsQueue = new JobsQueue();
     
