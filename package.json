@@ -1,7 +1,7 @@
 {
   "name": "jobs-queue",
-  "version": "0.0.3",
-  "description": "Queue of tasks, with optional simultaneous jobs set at a module and/or job level",
+  "version": "1.0.0",
+  "description": "Queue of tasks, with options to cancel and retry",
   "private": false,
   "author": {
     "name": "John Murphy-Teixidor",
@@ -11,15 +11,10 @@
     "type": "git",
     "url": "https://github.com/johnvmt/node-jobs-queue.git"
   },
-  "devDependencies": {
-    "browserify": "11.2.x",
-    "minifyify": "7.3.x"
-  },
   "dependencies": {
+    "esm": "^3.2.25",
+    "wolfy87-eventemitter": "^5.2.9",
+    "bluebird":  "^3.7.2"
   },
-  "main": "./src/JobsQueue.js",
-  "scripts": {
-    "test": "mocha test",
-    "prepublish": "node ./scripts/browserify.js"
-  }
+  "main": "./src/JobsQueue.js"
 }

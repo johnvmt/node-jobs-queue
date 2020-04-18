@@ -1,153 +1,148 @@
-var IndexedLinkedList = require('./IndexedLinkedList');
+import EventEmitter from "wolfy87-eventemitter";
+import Promise from "bluebird";
 
-function JobsQueue(passedOptions) {
-	var defaultOptions = {
-		maxSimultaneous: 1
-	};
+class JobsQueue extends EventEmitter {
 
-	this.options = this._objectMerge(defaultOptions, passedOptions)
+	constructor() {
+		super();
 
-	this.queuedJobList = IndexedLinkedList();
-	this.inprogressJobList = IndexedLinkedList();
+		const self = this;
 
-	this.inprogress = 0;
-	this.queued = 0;
+		Promise.config({
+			cancellation: true
+		});
+
+		self.queued = new Set();
+		self.running = new Set();
+
+		self.on('start', startQueue);
+		self.on('end', startQueue);
+		self.on('enqueue', startQueue);
+		self.on('cancel', startQueue);
+
+		let queued = 0;
+		let running = 0;
+		let requests = 0;
+		function startQueue() {
+			if(self.queued.size !== queued) {
+				queued = self.queued.size;
+				self.emit('queued', queued);
+			}
+
+			if(self.running.size !== running) {
+				running = self.running.size;
+				self.emit('running', running);
+			}
+
+			if(self.running.size + self.queued.size !== requests) {
+				requests = self.running.size + self.queued.size;
+				self.emit('requests', requests);
+			}
+
+			self.startNext();
+		}
+	}
+
+	async startNext() {
+		if(this.queued.size > 0) {
+			let job = this.queued.entries().next().value[0];
+
+			if(typeof job.config.startFilter !== 'function' || job.config.startFilter()) {
+				this.queued.delete(job);
+				this.running.add(job);
+
+				try {
+					this.emit('start', job);
+					job.attempts = this.attemptJobWithRetries(job);
+					job.resolve(await job.attempts);
+				}
+				catch(error) {
+					job.reject(error);
+				}
+				finally {
+					this.running.delete(job);
+					this.emit('end', job);
+				}
+			}
+		}
+	}
+
+	attemptJobWithRetries(job) {
+		const self = this;
+
+		return self.attemptJobOnce(job).catch((error) => {
+			if(typeof job.config.retryFilter === 'function' && job.config.retryFilter(error))
+				return this.attemptJobWithRetries(job);
+			else
+				throw error;
+		});
+	}
+
+	attemptJobOnce(job) {
+		const self = this;
+		return new Promise(async (resolve, reject, onCancel) => {
+			try {
+				let startResult = job.config.start();
+				if(startResult instanceof Promise) {
+					const jobTimeout = (typeof job.config.timeout === 'number' && job.config.timeout > 0) ? setTimeout(() => {
+						reject(new Error('timeout'));
+					}, job.config.timeout) : null;
+
+					onCancel(() => {
+						if(typeof startResult.cancel === 'function') {
+							try {
+								startResult.cancel();
+							}
+							catch(error) {
+								self.emit('error', error);
+							}
+						}
+					});
+
+					startResult.then(resolve).catch(reject).finally(() => {
+						if(jobTimeout !== null)
+							clearTimeout(jobTimeout);
+					});
+				}
+				else
+					resolve(startResult);
+			}
+			catch(error) {
+				reject(error);
+			}
+		});
+	}
+
+	enqueue(jobConfig) {
+		// return a cancelable promise
+		const self = this;
+
+		return new Promise((resolve, reject, onCancel) => {
+			let job = {
+				config: jobConfig,
+				resolve: resolve,
+				reject: reject
+			};
+
+			self.queued.add(job);
+			self.emit('enqueue', job);
+
+			onCancel(() => {
+				if(self.queued.has(job)) {
+					self.queued.delete(job);
+					self.emit('cancel', job);
+				}
+				else if(self.running.has(job)) {
+					job.attempts.cancel();
+					self.running.delete(job);
+				}
+			});
+		});
+	}
+
+	async destroy() {
+		this.removeEvent();
+	}
 }
 
-JobsQueue.prototype._tryStartNextJob = function() {
-	if(this.queuedJobList.length) {
-		// Get max simultaneous jobs from jobs in progress, next job in queue, global max; take min of these to get max
-		var globalMaxSimultaneous = maxFromOption(this.options.maxSimultaneous);
-
-		var inprogressMaxSimultaneous = 0;
-		this.inprogressJobList.forEach(function(job) {
-			inprogressMaxSimultaneous = maxFromArray([inprogressMaxSimultaneous, job.options.maxSimultaneous]);
-		});
-
-		var nextJob = this.queuedJobList.peek();
-		var nextJobMaxSimultaneous = maxFromOption(nextJob.options.maxSimultaneous);
-
-		var maxSimultaneous = maxFromArray([globalMaxSimultaneous, inprogressMaxSimultaneous, nextJobMaxSimultaneous]);
-
-		if(maxSimultaneous <= 0 || this.inprogress < maxSimultaneous) { // Start the next job
-			var job = this.queuedJobList.dequeue(); // Remove from the queued jobs list
-			this.queued--;
-
-			this.inprogressJobList.enqueue(job.jobId, job); // Add to the jobs in progress list, with same ID
-			this.inprogress++;
-
-			this._startJob(job.jobId);
-
-			this._tryStartNextJob(); // May be able to run jobs simultaneously
-		}
-	}
-
-	function maxFromArray(maxList) {
-		var limitedMaxList = maxList.filter(function(maxSimultaneous) {
-			return maxFromOption(maxSimultaneous) > 0;
-		});
-		return (limitedMaxList.length > 0) ? Math.min.apply(null, limitedMaxList) : 0;
-	}
-
-	function maxFromOption(maxInProgress) {
-		return (typeof maxInProgress == 'number' && maxInProgress > 0) ? maxInProgress : 0;
-	}
-};
-
-JobsQueue.prototype._startJob = function(jobId) {
-	if(this.inprogressJobList.hasIndex(jobId)) {
-		var job = this.inprogressJobList.get(jobId);
-		var jobRestarts = job.restarts;
-
-		job.start(function() { // Start the job and pass in the callback to finish the job
-			if(jobRestarts == job.restarts) // Check if job started was the last one
-				job.controller.complete();
-		});
-	}
-};
-
-JobsQueue.prototype._finishJob = function(jobId) {
-	if(this.inprogressJobList.hasIndex(jobId)) {
-		this.inprogressJobList.remove(jobId);
-		this.inprogress--;
-		this._tryStartNextJob();
-	}
-	else if(this.queuedJobList.hasIndex(jobId)) {
-		this.queuedJobList.remove(jobId);
-		this.queued--;
-		this._tryStartNextJob();
-	}
-	else
-		throw new Error('job_not_found');
-};
-
-JobsQueue.prototype.enqueue = function(callback, options) {
-	var self = this;
-	var jobId = this._uniqueId();
-
-	var job = {
-		jobId: jobId,
-		start: callback, // Wrap function to ensure uniqueness when job finishes
-		restarts: 0,
-		options: self._objectMerge({}, options),
-	}
-
-	var jobController = {
-		cancel: function() {
-			self._finishJob(jobId);
-		},
-		complete: function() {
-			self._finishJob(jobId);
-		},
-		restart: function(newCallback) {
-			if(typeof newCallback == 'function')
-				job.start = newCallback;
-			job.restarts++;
-			self._startJob(jobId); // Restart if already in progress
-		}
-	};
-
-	job.controller = jobController;
-
-	self.queuedJobList.enqueue(jobId, job);
-
-	this.queued++;
-
-	this._tryStartNextJob();
-
-	return jobController;
-};
-
-JobsQueue.prototype._objectForEach = function(object, callback) {
-	// run function on each property (child) of object
-	var property;
-	for(property in object) { // pull keys before looping through?
-		if (object.hasOwnProperty(property))
-			callback(object[property], property, object);
-	}
-};
-
-JobsQueue.prototype._objectMerge = function() {
-	var merged = {};
-	this._objectForEach(arguments, function(argument) {
-		for (var attrname in argument) {
-			if(argument.hasOwnProperty(attrname))
-				merged[attrname] = argument[attrname];
-		}
-	});
-	return merged;
-};
-
-JobsQueue.prototype._uniqueId = function() {
-	function s4() {
-		return Math.floor((1 + Math.random()) * 0x10000)
-			.toString(16)
-			.substring(1);
-	}
-	return s4() + s4() + '-' + s4() + '-' + s4() + '-' +
-		s4() + '-' + s4() + s4() + s4();
-};
-
-module.exports = function(options) {
-	return new JobsQueue(options);
-};
+export default JobsQueue;
