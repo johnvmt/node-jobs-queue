@@ -1,7 +1,8 @@
 {
   "name": "jobs-queue",
-  "version": "1.0.0",
   "description": "Queue of tasks, with options to cancel and retry",
+  "version": "2.0.0",
+  "type": "module",
   "private": false,
   "author": {
     "name": "John Murphy-Teixidor",
@@ -12,8 +13,6 @@
     "url": "https://github.com/johnvmt/node-jobs-queue.git"
   },
   "dependencies": {
-    "esm": "^3.2.25",
-    "wolfy87-eventemitter": "^5.2.9",
     "bluebird":  "^3.7.2"
   },
   "main": "./src/JobsQueue.js"
