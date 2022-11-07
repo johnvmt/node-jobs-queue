@@ -25,7 +25,7 @@ class JobsQueue extends EventEmitter {
 			}
 
 			if(this.running.size + this.queued.size !== requests) {
-				requests = this.running.size + this.queued.length;
+				requests = this.running.size + this.queued.size;
 				this.emit('requests', requests);
 			}
 
