@@ -1,8 +1,8 @@
-import EventEmitter from "events";
 import Promise from "bluebird";
+import EventEmitter from "events";
+import FastPriorityQueue from "fastpriorityqueue";
 
 class JobsQueue extends EventEmitter {
-
 	constructor() {
 		super();
 
@@ -10,7 +10,7 @@ class JobsQueue extends EventEmitter {
 			cancellation: true
 		});
 
-		this.queued = new Set();
+		this.queued = new FastPriorityQueue((a, b) => a.config.priority > b.config.priority);
 		this.running = new Set();
 
 		const startQueue = () => {
@@ -25,7 +25,7 @@ class JobsQueue extends EventEmitter {
 			}
 
 			if(this.running.size + this.queued.size !== requests) {
-				requests = this.running.size + this.queued.size;
+				requests = this.running.size + this.queued.length;
 				this.emit('requests', requests);
 			}
 
@@ -44,10 +44,11 @@ class JobsQueue extends EventEmitter {
 
 	async startNext() {
 		if(this.queued.size > 0) {
-			let job = this.queued.entries().next().value[0];
+			let job = this.queued.peek();
 
 			if(typeof job.config.startFilter !== 'function' || job.config.startFilter()) {
-				this.queued.delete(job);
+				this.queued.poll();
+				this.queued.trim();
 				this.running.add(job);
 
 				try {
@@ -112,8 +113,11 @@ class JobsQueue extends EventEmitter {
 	enqueue(jobConfig) {
 		// return a cancelable promise
 		return new Promise((resolve, reject, onCancel) => {
-			let job = {
-				config: jobConfig,
+			const job = {
+				config: {
+					priority: 0,
+					...jobConfig
+				},
 				resolve: resolve,
 				reject: reject
 			};
@@ -122,14 +126,12 @@ class JobsQueue extends EventEmitter {
 			this.emit('enqueue', job);
 
 			onCancel(() => {
-				if(this.queued.has(job)) {
-					this.queued.delete(job);
-					this.emit('cancel', job);
-				}
-				else if(this.running.has(job)) {
+				if(this.running.has(job)) {
 					job.attempts.cancel();
 					this.running.delete(job);
 				}
+				else if(this.queued.remove(job))
+					this.emit('cancel', job);
 			});
 		});
 	}
